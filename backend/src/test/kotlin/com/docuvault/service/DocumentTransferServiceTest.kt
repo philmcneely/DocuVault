@@ -84,7 +84,7 @@ class DocumentTransferServiceTest {
 
         assertTrue(gitService.regularFileExists(space, "archive/notes/one.md"))
         assertFalse(gitService.itemExists(space, "notes"))
-        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space.id!!))
+        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space))
     }
 
     @Test
@@ -115,7 +115,7 @@ class DocumentTransferServiceTest {
         assertEquals(listOf("Moving", "Updating the file index", "Saving to Git"), updates.map { it.label }.distinct())
         assertEndsOnLastStep(updates)
         assertTrue(gitService.regularFileExists(space, "archive/notes/one.md"))
-        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space.id!!))
+        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space))
     }
 
     @Test

@@ -76,6 +76,11 @@ export class GitService {
     return this.http.get<string[]>(`/api/git/projects/${projectId}/branches`);
   }
 
+  /** Top-level folders of the project's default branch. */
+  getProjectFolders(projectId: number): Observable<string[]> {
+    return this.http.get<string[]>(`/api/git/projects/${projectId}/folders`);
+  }
+
   pullChanges(spaceId: string): Observable<GitOperationResult> {
     return this.http.post<GitOperationResult>(`/api/git/spaces/${spaceId}/pull`, {});
   }

@@ -43,6 +43,14 @@ data class Space(
     @Column(nullable = false)
     var branch: String = "main",
 
+    /**
+     * The folder of the repository this space shows and writes to, e.g. `docs`.
+     * Null syncs the whole repository. Fixed at creation: changing it would move
+     * every document to a different path.
+     */
+    @Column(name = "git_subfolder", length = 500)
+    val gitSubfolder: String? = null,
+
     @Column(name = "sync_enabled")
     var syncEnabled: Boolean = true,
 
@@ -115,6 +123,26 @@ data class Space(
         return parts.joinToString("/")
     }
 
+    /** Where a space-relative [path] lives in the repository. */
+    fun repoPathOf(path: String): String {
+        val folder = gitSubfolder ?: return path
+        val inner = path.trim('/')
+        return if (inner.isEmpty()) folder else "$folder/$inner"
+    }
+
+    /**
+     * The space-relative path of a repository path, or null when it lies outside
+     * the synced folder and the space therefore cannot see it.
+     */
+    fun spacePathOf(repoPath: String): String? {
+        val folder = gitSubfolder ?: return repoPath
+        return when {
+            repoPath == folder -> ""
+            repoPath.startsWith("$folder/") -> repoPath.substring(folder.length + 1)
+            else -> null
+        }
+    }
+
     fun getDepth(): Int {
         var depth = 0
         var current: Space? = this.parent
@@ -132,4 +160,21 @@ data class Space(
     }
 
     override fun hashCode(): Int = id?.hashCode() ?: 0
+
+    companion object {
+        /**
+         * Turns what someone typed as the synced folder into the stored form:
+         * forward slashes, no leading or trailing slash, null for the root.
+         * @throws IllegalArgumentException for a path that could leave the
+         *   repository or reach into `.git`
+         */
+        fun normalizeGitSubfolder(input: String?): String? {
+            val segments = input.orEmpty().replace('\\', '/').split('/').map { it.trim() }.filter { it.isNotEmpty() }
+            if (segments.isEmpty()) return null
+            require(segments.none { it == "." || it == ".." || it.equals(".git", ignoreCase = true) }) {
+                "The folder must be a plain path inside the repository, e.g. docs or backend/docs"
+            }
+            return segments.joinToString("/")
+        }
+    }
 }

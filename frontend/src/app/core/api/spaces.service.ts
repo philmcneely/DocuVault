@@ -16,6 +16,8 @@ export interface Space {
   gitlabProjectId?: number;
   gitlabUrl?: string;
   branch: string;
+  /** The repository folder this space syncs, e.g. `docs`; absent for the whole repository. */
+  gitSubfolder?: string;
   syncEnabled: boolean;
   syncIntervalMinutes: number;
   lastSyncedAt?: string;
@@ -49,6 +51,7 @@ export interface CreateSpaceRequest {
   gitlabProjectId?: number;
   gitlabUrl?: string;
   branch?: string;
+  gitSubfolder?: string;
   syncEnabled?: boolean;
 }
 

@@ -4,6 +4,7 @@ import com.docuvault.config.GitLabApiProvider
 import org.gitlab4j.api.models.MergeRequest
 import org.gitlab4j.api.models.MergeRequestParams
 import org.gitlab4j.api.models.Project
+import org.gitlab4j.api.models.TreeItem
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
@@ -46,6 +47,20 @@ class GitLabService(
             api.repositoryApi.getBranches(projectId)
                 .map { it.name }
         } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
+    fun listFolders(projectId: Int, ref: String): List<String> {
+        val api = gitLabApiProvider.getApi() ?: return emptyList()
+
+        return try {
+            api.repositoryApi.getTree(projectId, null, ref)
+                .filter { it.type == TreeItem.Type.TREE }
+                .map { it.path }
+                .sorted()
+        } catch (e: Exception) {
+            logger.warn("Failed to list folders of GitLab project $projectId at '$ref': ${e.message}")
             emptyList()
         }
     }

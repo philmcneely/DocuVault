@@ -354,6 +354,23 @@ body {
   }
 }
 
+// Inline failure banner above a form's actions
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.2);
+  border-radius: var(--radius-md);
+  color: var(--error);
+  font-size: 13px;
+
+  .material-icons {
+    font-size: 20px;
+  }
+}
+
 // ============================================
 // CARD STYLES
 // ============================================

@@ -47,6 +47,9 @@ class SyncScheduler(
         val spaces = spaceRepository.findAllRepositoriesWithSyncEnabled()
 
         for (space in spaces) {
+            // The request that created the space is still cloning it.
+            if (gitService.isCloning(space)) continue
+
             if (space.syncStatus == SyncStatus.IN_CONFLICT) {
                 // Don't attempt to pull; instead poll the tracked resolution MR.
                 try {
@@ -102,7 +105,7 @@ class SyncScheduler(
     }
 
     fun indexDocuments(space: Space): Int {
-        val repoPath = gitService.getRepoPath(space.id!!)
+        val repoPath = gitService.getContentRoot(space)
         if (!Files.exists(repoPath)) return 0
 
         var indexed = 0

@@ -89,7 +89,7 @@ class SpaceFileController(
         }
         val filePath = URLDecoder.decode(rawPath, StandardCharsets.UTF_8)
 
-        val repoPath = gitService.getRepoPath(spaceId)
+        val repoPath = gitService.getContentRoot(space)
         val resolved = repoPath.resolve(filePath).normalize()
 
         // Path traversal protection

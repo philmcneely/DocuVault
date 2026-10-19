@@ -100,6 +100,15 @@ interface SpaceTokenDto {
                       </svg>
                     </div>
                   </div>
+
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Synced folder</label>
+                    <div class="gitlab-repo-link">
+                      <span translate="no" class="material-icons synced-folder-icon">folder</span>
+                      <span class="repo-url">{{ space()!.gitSubfolder || 'Whole repository' }}</span>
+                    </div>
+                    <p class="mt-1 text-xs text-gray-500">Chosen when the space was created.</p>
+                  </div>
                 }
 
                 <div>
@@ -700,6 +709,10 @@ await state.save();</pre>
       background: var(--background, #f9fafb);
       border: 1px solid var(--border, #e5e7eb);
       border-radius: 6px;
+    }
+    .synced-folder-icon {
+      font-size: 16px;
+      color: var(--text-muted);
     }
     .gitlab-icon {
       width: 16px;

@@ -59,6 +59,19 @@ class GitController(
         return ResponseEntity.ok(branches)
     }
 
+    /** Top-level folders of a branch (the default branch without [ref]), offered when a space syncs one folder. */
+    @GetMapping("/projects/{projectId}/folders")
+    @PreAuthorize("hasAnyRole('SUPER_ADMIN', 'ORG_ADMIN')")
+    fun getProjectFolders(
+        @PathVariable projectId: Int,
+        @RequestParam(required = false) ref: String?
+    ): ResponseEntity<List<String>> {
+        val branch = ref?.takeIf { it.isNotBlank() }
+            ?: gitLabService.getProject(projectId)?.defaultBranch
+            ?: return ResponseEntity.notFound().build()
+        return ResponseEntity.ok(gitLabService.listFolders(projectId, branch))
+    }
+
     @PostMapping("/spaces/{spaceId}/pull")
     fun pullChanges(
         @PathVariable spaceId: UUID,
@@ -179,7 +192,7 @@ class GitController(
         val space = spaceRepository.findById(spaceId).orElse(null)
             ?: return ResponseEntity.notFound().build()
 
-        val files = gitService.getUncommittedFiles(spaceId)
+        val files = gitService.getUncommittedFiles(space)
         return ResponseEntity.ok(UncommittedFilesResponse(
             files = files,
             lastPushError = space.lastPushError

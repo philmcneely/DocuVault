@@ -72,7 +72,7 @@ class TransferControllerTest {
         }
     })
     private val gitService = mock(GitService::class.java, Answer { inv ->
-        if (inv.method.name == "getRepoPath") repos.resolve((inv.arguments[0] as UUID).toString()) else null
+        if (inv.method.name == "getContentRoot") repos.resolve((inv.arguments[0] as Space).id.toString()) else null
     })
 
     private val mockMvc = MockMvcBuilders

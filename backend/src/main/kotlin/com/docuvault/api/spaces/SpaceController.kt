@@ -341,6 +341,15 @@ class SpaceController(
             return ResponseEntity.badRequest().body(mapOf("message" to "Groups cannot have Git repository settings"))
         }
 
+        val gitSubfolder = try {
+            Space.normalizeGitSubfolder(request.gitSubfolder)
+        } catch (e: IllegalArgumentException) {
+            return ResponseEntity.badRequest().body(mapOf("message" to e.message))
+        }
+        if (gitSubfolder != null && (spaceType != SpaceType.REPOSITORY || (request.gitlabProjectId == null && request.gitlabUrl.isNullOrBlank()))) {
+            return ResponseEntity.badRequest().body(mapOf("message" to "Only a Git-backed space can sync a single folder"))
+        }
+
         val gitlabProject = request.gitlabProjectId?.let { gitLabService.getProject(it) }
 
         val space = Space(
@@ -352,6 +361,7 @@ class SpaceController(
             gitlabProjectId = if (spaceType == SpaceType.REPOSITORY) request.gitlabProjectId else null,
             gitlabUrl = if (spaceType == SpaceType.REPOSITORY) (gitlabProject?.httpUrlToRepo ?: request.gitlabUrl) else null,
             branch = request.branch ?: gitlabProject?.defaultBranch ?: "main",
+            gitSubfolder = gitSubfolder,
             syncEnabled = if (spaceType == SpaceType.REPOSITORY) (request.syncEnabled ?: true) else false,
             createdBy = user
         )
@@ -838,6 +848,8 @@ data class CreateSpaceRequest(
     val gitlabProjectId: Int? = null,
     val gitlabUrl: String? = null,
     val branch: String? = null,
+    /** Sync only this folder of the repository, e.g. "docs". Blank = the whole repository. */
+    val gitSubfolder: String? = null,
     val syncEnabled: Boolean? = true
 )
 
@@ -881,6 +893,7 @@ data class SpaceDto(
     val gitlabProjectId: Int?,
     val gitlabUrl: String?,
     val branch: String,
+    val gitSubfolder: String?,
     val syncEnabled: Boolean,
     val syncIntervalMinutes: Int,
     val lastSyncedAt: Instant?,
@@ -917,6 +930,7 @@ fun Space.toDto(gitError: String? = null, documentCount: Long = 0, childCount: L
     gitlabProjectId = this.gitlabProjectId,
     gitlabUrl = this.gitlabUrl,
     branch = this.branch,
+    gitSubfolder = this.gitSubfolder,
     syncEnabled = this.syncEnabled,
     syncIntervalMinutes = this.syncIntervalMinutes,
     lastSyncedAt = this.lastSyncedAt,

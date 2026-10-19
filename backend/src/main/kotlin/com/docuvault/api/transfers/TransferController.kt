@@ -1,5 +1,6 @@
 package com.docuvault.api.transfers
 
+import com.docuvault.domain.space.Space
 import com.docuvault.infrastructure.repository.SpaceRepository
 import com.docuvault.infrastructure.repository.UserRepository
 import com.docuvault.service.FileUploadService
@@ -68,7 +69,7 @@ class TransferController(
         }
         if (!allowed) return ResponseEntity.status(HttpStatus.FORBIDDEN).build()
         if (kind == TransferKind.UPLOAD) requireSpaceWritable(space)
-        if (kind == TransferKind.DOWNLOAD && !Files.isRegularFile(resolve(space.id!!, path))) {
+        if (kind == TransferKind.DOWNLOAD && !Files.isRegularFile(resolve(space, path))) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "No file at $path")
         }
 
@@ -126,7 +127,7 @@ class TransferController(
         if (!permissionService.hasAccess(user.id!!, space.id!!, user.role)) {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build()
         }
-        val file = resolve(space.id!!, ticket.path)
+        val file = resolve(space, ticket.path)
         if (!Files.isRegularFile(file)) throw ResponseStatusException(HttpStatus.NOT_FOUND, "No file at ${ticket.path}")
 
         val contentType = Files.probeContentType(file) ?: MediaType.APPLICATION_OCTET_STREAM_VALUE
@@ -146,7 +147,7 @@ class TransferController(
         return ticket
     }
 
-    private fun resolve(spaceId: UUID, path: String) = gitService.getRepoPath(spaceId).resolve(path).normalize()
+    private fun resolve(space: Space, path: String) = gitService.getContentRoot(space).resolve(path).normalize()
 }
 
 data class IssueTransferRequest(

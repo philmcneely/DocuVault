@@ -98,6 +98,7 @@ import { SearchableSelectComponent, SelectOption } from './searchable-select.com
                 <app-searchable-select
                   [options]="gitlabProjectOptions()"
                   [(ngModel)]="newSpace.gitlabProjectId"
+                  (ngModelChange)="loadRepoFolders($event)"
                   name="gitlabProjectId"
                   placeholder="-- Select a project --"
                   searchPlaceholder="Search projects..."
@@ -118,6 +119,34 @@ import { SearchableSelectComponent, SelectOption } from './searchable-select.com
                 </div>
               </div>
             }
+
+            <div class="form-group">
+              <label class="form-label">Folder in repository</label>
+              <div class="input-icon">
+                <span translate="no" class="material-icons">folder</span>
+                <input
+                  type="text"
+                  [(ngModel)]="newSpace.gitSubfolder"
+                  name="gitSubfolder"
+                  class="input"
+                  placeholder="Whole repository"
+                  autocomplete="off"
+                />
+              </div>
+              @if (repoFolders().length) {
+                <div class="folder-suggestions">
+                  @for (folder of repoFolders(); track folder) {
+                    <button
+                      type="button"
+                      class="folder-chip"
+                      [class.active]="newSpace.gitSubfolder === folder"
+                      (click)="newSpace.gitSubfolder = folder"
+                    >{{ folder }}</button>
+                  }
+                </div>
+              }
+              <span class="form-hint">Sync only this folder, e.g. docs or backend/docs. Leave empty for the whole repository. Can't be changed later.</span>
+            </div>
 
             <label class="checkbox-label">
               <input
@@ -213,6 +242,35 @@ import { SearchableSelectComponent, SelectOption } from './searchable-select.com
       margin-top: var(--spacing-xs);
     }
 
+    .folder-suggestions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: var(--spacing-sm);
+    }
+
+    .folder-chip {
+      padding: 3px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--background);
+      color: var(--text-secondary);
+      font-size: 0.8125rem;
+      cursor: pointer;
+      transition: border-color 0.15s, color 0.15s;
+
+      &:hover {
+        border-color: var(--primary);
+        color: var(--text-primary);
+      }
+
+      &.active {
+        border-color: var(--primary);
+        background: var(--surface);
+        color: var(--primary);
+      }
+    }
+
     .mode-tabs {
       display: flex;
       gap: 4px;
@@ -266,6 +324,7 @@ export class CreateSpaceModalComponent implements OnInit {
   createError = signal<string | null>(null);
   gitConnected = signal(false);
   gitlabProjects = signal<GitLabProject[]>([]);
+  repoFolders = signal<string[]>([]);
   spaceMode = signal<'standalone' | 'git'>('standalone');
 
   gitlabProjectOptions = computed<SelectOption[]>(() =>
@@ -309,6 +368,8 @@ export class CreateSpaceModalComponent implements OnInit {
     if (mode === 'standalone') {
       this.newSpace.gitlabProjectId = undefined;
       this.newSpace.gitlabUrl = undefined;
+      this.newSpace.gitSubfolder = undefined;
+      this.repoFolders.set([]);
       this.newSpace.syncEnabled = false;
     } else {
       this.newSpace.syncEnabled = true;
@@ -327,6 +388,7 @@ export class CreateSpaceModalComponent implements OnInit {
     if (this.type === 'REPOSITORY' && this.spaceMode() === 'standalone') {
       this.newSpace.gitlabProjectId = undefined;
       this.newSpace.gitlabUrl = undefined;
+      this.newSpace.gitSubfolder = undefined;
       this.newSpace.syncEnabled = false;
     }
 
@@ -378,6 +440,17 @@ export class CreateSpaceModalComponent implements OnInit {
         const message = error.error?.message || 'Failed to create space';
         this.createError.set(message);
         this.toastService.error('Failed to Create Space', message);
+      }
+    });
+  }
+
+  loadRepoFolders(projectId: number | undefined): void {
+    this.repoFolders.set([]);
+    if (projectId == null) return;
+    this.gitService.getProjectFolders(projectId).subscribe({
+      next: (folders) => {
+        // A late answer for a project that is no longer selected must not replace the current one's.
+        if (this.newSpace.gitlabProjectId === projectId) this.repoFolders.set(folders);
       }
     });
   }

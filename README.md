@@ -19,7 +19,7 @@ For developers and AI tools, the same files are available locally — clone the 
 
 ## Features
 
-- **Git-backed storage.** Every save is a commit, with full version history. A space syncs with a GitLab repository (GitHub is planned) or stays a local Git repository on the server.
+- **Git-backed storage.** Every save is a commit, with full version history. A space syncs with a GitLab repository (GitHub is planned), or with a single folder of one such as the `docs/` of a monorepo, or stays a local Git repository on the server.
 - **Local-first AI editing.** Clone the repo and edit with any LLM tool that works on files. No vendor lock-in.
 - **Built-in MCP server.** Point Claude Code, Claude Desktop or Cursor at `/api/mcp`, sign in once in the browser, and your agent can search, read, create, edit and share documents with your permissions.
 - **WYSIWYG editor.** TipTap-based rich editor that emits clean Markdown.

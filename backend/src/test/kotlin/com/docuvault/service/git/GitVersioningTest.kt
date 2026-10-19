@@ -190,7 +190,7 @@ class GitVersioningTest {
         assertTrue(gitService.removeItem(space, "drop.md"))
         gitService.commitAndPush(space, "Change all three ways", "Bob", "bob@example.com")
 
-        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space.id!!))
+        assertEquals(emptyList<String>(), gitService.getUncommittedFiles(space))
         assertEquals("Change all three ways", diffService.fileHistory(space, "keep.md").first().message)
         assertEquals("Change all three ways", diffService.fileHistory(space, "docs/new.md").single().message)
         assertEquals("Change all three ways", diffService.fileHistory(space, "drop.md").first().message)

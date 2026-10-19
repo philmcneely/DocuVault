@@ -4,6 +4,7 @@ import com.docuvault.domain.space.Space
 import com.docuvault.service.SettingsService
 import org.eclipse.jgit.api.Git
 import org.eclipse.jgit.api.ResetCommand
+import org.eclipse.jgit.api.Status
 import org.eclipse.jgit.api.errors.CheckoutConflictException
 import org.eclipse.jgit.api.errors.TransportException
 import org.eclipse.jgit.transport.UsernamePasswordCredentialsProvider
@@ -32,11 +33,27 @@ class GitService(
 
     private fun lockFor(spaceId: UUID): Any = repoLocks.computeIfAbsent(spaceId) { Any() }
 
+    // Spaces whose first clone is still running. The scheduler leaves them alone until
+    // it finishes; a pull into the half-written repository fails and flags the new
+    // space as broken, which a large monorepo makes likely.
+    private val clonesInProgress: MutableSet<UUID> = ConcurrentHashMap.newKeySet()
+
+    fun isCloning(space: Space): Boolean = space.id in clonesInProgress
+
     private fun getCredentialsProvider(): UsernamePasswordCredentialsProvider {
         return UsernamePasswordCredentialsProvider("oauth2", settingsService.getGitlabToken())
     }
 
+    /** The space's Git working tree — the whole clone, also for a space that syncs one folder. */
     fun getRepoPath(spaceId: UUID): Path = Path.of(reposPath, spaceId.toString())
+
+    /**
+     * The directory that holds the space's documents: the repository root, or the
+     * synced folder inside it. Every space-relative path resolves against this,
+     * so nothing outside the folder can be read or written through the space.
+     */
+    fun getContentRoot(space: Space): Path =
+        getRepoPath(space.id!!).let { root -> space.gitSubfolder?.let { root.resolve(it) } ?: root }
 
     /**
      * Lazily turns a space's plain content directory into a local Git repository so
@@ -81,6 +98,11 @@ class GitService(
             return
         }
 
+        if (!clonesInProgress.add(space.id!!)) {
+            logger.info("Repository for space '${space.name}' is already being cloned")
+            return
+        }
+
         logger.info("Cloning repository for space '${space.name}' from ${space.gitlabUrl}")
 
         try {
@@ -92,12 +114,17 @@ class GitService(
                 .call()
                 .close()
 
+            // A folder that does not exist yet is fine: the first document creates it.
+            Files.createDirectories(getContentRoot(space))
+
             logger.info("Successfully cloned repository for space '${space.name}'")
         } catch (e: Exception) {
             logger.error("Failed to clone repository for space '${space.name}': ${e.message}", e)
             // Clean up partial clone
             repoDir.deleteRecursively()
             throw mapException(e, GitErrorCode.CLONE_FAILED, "clone repository")
+        } finally {
+            clonesInProgress.remove(space.id!!)
         }
     }
 
@@ -179,7 +206,7 @@ class GitService(
      * working tree was already clean (nothing to commit).
      */
     private fun snapshotDirtyWorkingTree(git: Git, space: Space, message: String): Boolean {
-        if (!stageChanges(git)) return false
+        if (!stageChanges(git, space)) return false
 
         git.commit()
             .setMessage(message)
@@ -196,9 +223,11 @@ class GitService(
      * every file in the tree whether it changed or not, which on a space with a
      * couple of hundred megabytes of attachments cost ~6 s on every single commit.
      * Status compares file metadata first, so finding the changes is cheap.
+     *
+     * A space that syncs one folder only ever commits inside that folder.
      */
-    private fun stageChanges(git: Git): Boolean {
-        val status = git.status().call()
+    private fun stageChanges(git: Git, space: Space): Boolean {
+        val status = statusOf(git, space)
         if (status.isClean) return false
 
         val changed = status.untracked + status.modified + status.conflicting
@@ -213,6 +242,13 @@ class GitService(
             rm.call()
         }
         return true
+    }
+
+    /** Working-tree status, limited to the synced folder when the space has one. */
+    private fun statusOf(git: Git, space: Space): Status {
+        val command = git.status()
+        space.gitSubfolder?.let { command.addPath(it) }
+        return command.call()
     }
 
     /**
@@ -252,7 +288,7 @@ class GitService(
             var committedAt: Long
             synchronized(lockFor(space.id!!)) {
                 Git.open(repoDir).use { git ->
-                    if (stageChanges(git)) {
+                    if (stageChanges(git, space)) {
                         git.commit()
                             .setMessage(message)
                             .setAuthor(authorName, authorEmail)
@@ -292,7 +328,7 @@ class GitService(
     }
 
     fun readFile(space: Space, path: String): String? {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = validatePath(repoDir, path)
 
         return if (Files.exists(filePath) && Files.isRegularFile(filePath)) {
@@ -309,7 +345,7 @@ class GitService(
 
     fun writeFile(space: Space, path: String, content: String): Boolean {
         ensureVersionedBeforeMutation(space)
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = validatePath(repoDir, path)
 
         return try {
@@ -324,7 +360,7 @@ class GitService(
 
     fun writeBinaryFile(space: Space, path: String, bytes: ByteArray): Boolean {
         ensureVersionedBeforeMutation(space)
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = validatePath(repoDir, path)
 
         return try {
@@ -339,7 +375,7 @@ class GitService(
 
     fun deleteFile(space: Space, path: String): Boolean {
         ensureVersionedBeforeMutation(space)
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = validatePath(repoDir, path)
 
         return try {
@@ -353,7 +389,7 @@ class GitService(
 
     /** How many regular files sit under a directory, at any depth. */
     fun countFilesIn(space: Space, path: String): Int {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         return try {
             val dirPath = validatePath(repoDir, path)
             if (!Files.isDirectory(dirPath)) return 0
@@ -370,7 +406,7 @@ class GitService(
      */
     fun deleteDirectory(space: Space, path: String): Boolean {
         ensureVersionedBeforeMutation(space)
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val dirPath = validatePath(repoDir, path)
 
         // Refuse to wipe the repository itself — only paths below it.
@@ -392,7 +428,7 @@ class GitService(
     }
 
     fun listFiles(space: Space, directory: String = ""): List<FileNode> {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val targetDir = if (directory.isBlank()) repoDir else validatePath(repoDir, directory)
 
         if (!Files.exists(targetDir) || !Files.isDirectory(targetDir)) {
@@ -419,7 +455,7 @@ class GitService(
     }
 
     private fun buildFileTree(space: Space, directory: String): List<FileNode> {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val nodes = listFiles(space, directory)
         return nodes.mapNotNull { node ->
             if (node.isDirectory) {
@@ -441,7 +477,7 @@ class GitService(
 
     fun renameItem(space: Space, oldPath: String, newPath: String): Boolean {
         ensureVersionedBeforeMutation(space)
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val sourcePath = validatePath(repoDir, oldPath)
         val targetPath = validatePath(repoDir, newPath)
 
@@ -460,7 +496,7 @@ class GitService(
      * a free name before a transfer rather than overwriting what is already there.
      */
     fun itemExists(space: Space, path: String): Boolean {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val resolved = try {
             validatePath(repoDir, path)
         } catch (_: IllegalArgumentException) {
@@ -486,8 +522,8 @@ class GitService(
         onFileCopied: () -> Unit = {}
     ): Boolean {
         ensureVersionedBeforeMutation(targetSpace)
-        val from = validatePath(getRepoPath(sourceSpace.id!!), sourcePath)
-        val to = validatePath(getRepoPath(targetSpace.id!!), targetPath)
+        val from = validatePath(getContentRoot(sourceSpace), sourcePath)
+        val to = validatePath(getContentRoot(targetSpace), targetPath)
 
         return try {
             if (!Files.exists(from)) return false
@@ -526,7 +562,7 @@ class GitService(
      */
     fun removeItem(space: Space, path: String): Boolean {
         ensureVersionedBeforeMutation(space)
-        val resolved = validatePath(getRepoPath(space.id!!), path)
+        val resolved = validatePath(getContentRoot(space), path)
         return try {
             if (!Files.exists(resolved)) return false
             if (Files.isDirectory(resolved)) {
@@ -545,7 +581,7 @@ class GitService(
 
     /** Every regular file under [path], as space-relative paths. */
     fun listFilesUnder(space: Space, path: String): List<String> {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val resolved = try {
             validatePath(repoDir, path)
         } catch (_: IllegalArgumentException) {
@@ -567,13 +603,13 @@ class GitService(
         }
     }
 
-    fun getUncommittedFiles(spaceId: UUID): List<String> {
-        val repoDir = getRepoPath(spaceId).toFile()
+    fun getUncommittedFiles(space: Space): List<String> {
+        val repoDir = getRepoPath(space.id!!).toFile()
         if (!repoDir.exists()) return emptyList()
 
         return try {
             Git.open(repoDir).use { git ->
-                val status = git.status().call()
+                val status = statusOf(git, space)
                 val files = mutableListOf<String>()
                 files.addAll(status.untracked)
                 files.addAll(status.modified)
@@ -581,16 +617,16 @@ class GitService(
                 files.addAll(status.changed)
                 files.addAll(status.removed)
                 files.addAll(status.missing)
-                files.sorted()
+                files.mapNotNull { space.spacePathOf(it) }.sorted()
             }
         } catch (e: Exception) {
-            logger.error("Failed to get git status for space $spaceId: ${e.message}", e)
+            logger.error("Failed to get git status for space ${space.id}: ${e.message}", e)
             emptyList()
         }
     }
 
     fun isDirectory(space: Space, path: String): Boolean {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = validatePath(repoDir, path)
         return Files.isDirectory(filePath)
     }
@@ -602,7 +638,7 @@ class GitService(
      * bad row.
      */
     fun regularFileExists(space: Space, path: String): Boolean {
-        val repoDir = getRepoPath(space.id!!)
+        val repoDir = getContentRoot(space)
         val filePath = try {
             validatePath(repoDir, path)
         } catch (_: IllegalArgumentException) {

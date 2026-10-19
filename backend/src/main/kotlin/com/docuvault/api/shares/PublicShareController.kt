@@ -148,7 +148,7 @@ class PublicShareController(
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
         }
 
-        val repoPath = gitService.getRepoPath(link.space.id!!)
+        val repoPath = gitService.getContentRoot(link.space)
         val resolved = repoPath.resolve(link.filePath).normalize()
 
         if (!resolved.startsWith(repoPath.normalize())) {
@@ -174,7 +174,7 @@ class PublicShareController(
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
         }
 
-        val repoPath = gitService.getRepoPath(link.space.id!!)
+        val repoPath = gitService.getContentRoot(link.space)
         val resolved = repoPath.resolve(link.filePath).normalize()
 
         if (!resolved.startsWith(repoPath.normalize())) {
@@ -236,7 +236,7 @@ class PublicShareController(
         // lets a document reference an asset above its own folder at all — a
         // path relative to the share would have no way to express it, since the
         // browser collapses `..` out of the URL before the request is sent.
-        val repoPath = gitService.getRepoPath(link.space.id!!).normalize()
+        val repoPath = gitService.getContentRoot(link.space).normalize()
         val resolved = repoPath.resolve(relativePath).normalize()
 
         // Path traversal protection: must stay within the repo
@@ -294,7 +294,7 @@ class PublicShareController(
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build()
         }
 
-        val repoPath = gitService.getRepoPath(link.space.id!!)
+        val repoPath = gitService.getContentRoot(link.space)
         val folderRoot = if (link.filePath.isBlank()) repoPath else repoPath.resolve(link.filePath).normalize()
 
         if (!folderRoot.startsWith(repoPath.normalize())) {
@@ -323,7 +323,7 @@ class PublicShareController(
         }
 
         val cleanSubPath = subPath.trimStart('/')
-        val repoPath = gitService.getRepoPath(link.space.id!!)
+        val repoPath = gitService.getContentRoot(link.space)
         val folderRoot = if (link.filePath.isBlank()) repoPath else repoPath.resolve(link.filePath).normalize()
         val resolved = folderRoot.resolve(cleanSubPath).normalize()
 
@@ -360,7 +360,7 @@ class PublicShareController(
         }
 
         val cleanSubPath = subPath.trimStart('/')
-        val repoPath = gitService.getRepoPath(link.space.id!!).normalize()
+        val repoPath = gitService.getContentRoot(link.space).normalize()
         val folderRoot = if (link.filePath.isBlank()) repoPath else repoPath.resolve(link.filePath).normalize()
         val resolved = folderRoot.resolve(cleanSubPath).normalize()
 
@@ -426,7 +426,7 @@ class PublicShareController(
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build()
         }
 
-        val repoPath = gitService.getRepoPath(link.space.id!!)
+        val repoPath = gitService.getContentRoot(link.space)
         val resolved = repoPath.resolve(cleanPath).normalize()
 
         if (!resolved.startsWith(repoPath.normalize())) {
@@ -576,7 +576,7 @@ class PublicShareController(
         if (!imgSrc.startsWith("http://") && !imgSrc.startsWith("https://")) {
             val resolved = if (fileDir.isNotEmpty()) "$fileDir/$imgSrc" else imgSrc
             val normalized = Path.of(resolved).normalize().toString()
-            val repoPath = gitService.getRepoPath(link.space.id!!)
+            val repoPath = gitService.getContentRoot(link.space)
             val filePath = repoPath.resolve(normalized).normalize()
             if (!filePath.startsWith(repoPath.normalize()) || !Files.exists(filePath)) {
                 return ResponseEntity.notFound().build()

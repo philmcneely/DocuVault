@@ -266,6 +266,12 @@ interface BreadcrumbItem {
                           <span translate="no" class="material-icons">link</span>
                           <span class="path">{{ extractRepoPath(space.gitlabUrl) }}</span>
                         </div>
+                        @if (space.gitSubfolder) {
+                          <div class="workspace-detail-row">
+                            <span translate="no" class="material-icons">folder</span>
+                            <span class="path">{{ space.gitSubfolder }}</span>
+                          </div>
+                        }
                         <div class="workspace-detail-row">
                           <span translate="no" class="material-icons">account_tree</span>
                           <span>{{ space.branch || 'main' }} branch</span>

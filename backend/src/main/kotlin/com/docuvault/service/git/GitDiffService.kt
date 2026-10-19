@@ -90,7 +90,9 @@ class GitDiffService(
                 RevWalk(repo).use { walk ->
                     walk.markStart(walk.parseCommit(to))
                     walk.markUninteresting(walk.parseCommit(from))
-                    walk.toList().reversed().flatMap { commit -> diffCommit(repo, commit) }
+                    walk.toList().reversed()
+                        .flatMap { commit -> diffCommit(repo, commit) }
+                        .mapNotNull { it.inSpace(space) }
                 }
             }
         } catch (e: Exception) {
@@ -112,8 +114,8 @@ class GitDiffService(
 
         return try {
             Git.open(repoDir).use { git ->
-                followRenames(git, path, limit).map { (commit, pathThen) ->
-                    commit.toFileVersion(pathThen)
+                followRenames(git, space.repoPathOf(path), limit).map { (commit, pathThen) ->
+                    commit.toFileVersion(space.spacePathOf(pathThen))
                 }
             }
         } catch (e: Exception) {
@@ -136,10 +138,10 @@ class GitDiffService(
 
         return try {
             Git.open(repoDir).use { git ->
-                val track = followRenames(git, path, limit = Int.MAX_VALUE)
+                val track = followRenames(git, space.repoPathOf(path), limit = Int.MAX_VALUE)
                 FileHistoryMeta(
-                    created = track.lastOrNull()?.let { (c, p) -> c.toFileVersion(p) },
-                    lastEdited = track.firstOrNull()?.let { (c, p) -> c.toFileVersion(p) }
+                    created = track.lastOrNull()?.let { (c, p) -> c.toFileVersion(space.spacePathOf(p)) },
+                    lastEdited = track.firstOrNull()?.let { (c, p) -> c.toFileVersion(space.spacePathOf(p)) }
                 )
             }
         } catch (e: Exception) {
@@ -171,7 +173,7 @@ class GitDiffService(
                 val renamesByCommit = mutableMapOf<ObjectId, Map<String, RenameHop>>()
                 // Commit to walk back from → path to look for there → the path the
                 // file is known by today.
-                var pending: Map<ObjectId, Map<String, String>> = mapOf(head to paths.associateWith { it })
+                var pending: Map<ObjectId, Map<String, String>> = mapOf(head to paths.associateBy { space.repoPathOf(it) })
                 var hops = 0
 
                 while (pending.isNotEmpty() && hops++ < MAX_RENAME_HOPS) {
@@ -179,7 +181,7 @@ class GitDiffService(
                     for ((start, tracked) in pending) {
                         for ((pathThen, commit) in oldestCommits(repo, start, tracked.keys)) {
                             val current = tracked.getValue(pathThen)
-                            created[current] = commit.toFileVersion(pathThen)
+                            created[current] = commit.toFileVersion(space.spacePathOf(pathThen))
                             val id = commit.toObjectId()
                             val hop = renamesByCommit.getOrPut(id) { renamesIn(repo, id) }[pathThen] ?: continue
                             next.getOrPut(hop.parent) { mutableMapOf() }[hop.fromPath] = current
@@ -332,7 +334,7 @@ class GitDiffService(
         val repoDir = gitService.getRepoPath(space.id!!).toFile()
         if (!repoDir.exists() || entries.isEmpty()) return emptyMap()
 
-        val prefix = folder.trim('/').let { if (it.isEmpty()) "" else "$it/" }
+        val prefix = space.repoPathOf(folder.trim('/')).let { if (it.isEmpty()) "" else "$it/" }
         val pending = entries.toMutableSet()
         val found = mutableMapOf<String, FileVersion>()
 
@@ -412,11 +414,12 @@ class GitDiffService(
                         formatter.setRepository(repo)
                         formatter.isDetectRenames = true
                         val scanned = formatter.scan(parent?.tree, commit.tree)
-                        var entries = scanned.filter { it.newPath == path || it.oldPath == path }
+                        val repoPath = space.repoPathOf(path)
+                        var entries = scanned.filter { it.newPath == repoPath || it.oldPath == repoPath }
                         // Nothing under the current path: before a rename the
                         // file appears under its old one, so follow the track.
                         if (entries.isEmpty()) {
-                            val then = historicalPath(git, path, sha)
+                            val then = historicalPath(git, repoPath, sha)
                             if (then != null) {
                                 entries = scanned.filter { it.newPath == then || it.oldPath == then }
                             }
@@ -449,10 +452,11 @@ class GitDiffService(
                 val commitId = repo.resolve(sha) ?: return null
                 RevWalk(repo).use { walk ->
                     val commit = walk.parseCommit(commitId)
-                    val resolved = if (org.eclipse.jgit.treewalk.TreeWalk.forPath(repo, path, commit.tree) != null) {
-                        path
+                    val repoPath = space.repoPathOf(path)
+                    val resolved = if (org.eclipse.jgit.treewalk.TreeWalk.forPath(repo, repoPath, commit.tree) != null) {
+                        repoPath
                     } else {
-                        historicalPath(git, path, sha) ?: return null
+                        historicalPath(git, repoPath, sha) ?: return null
                     }
                     val treeWalk = org.eclipse.jgit.treewalk.TreeWalk.forPath(repo, resolved, commit.tree)
                         ?: return null
@@ -464,6 +468,22 @@ class GitDiffService(
         } catch (e: Exception) {
             logger.warn("Failed to read '$path' at $sha in space '${space.name}': ${e.message}")
             null
+        }
+    }
+
+    /**
+     * The change as the space sees it: paths relative to its folder, and nothing
+     * for a change outside it. A move across the folder's edge reads as the file
+     * arriving or leaving.
+     */
+    private fun DetectedChange.inSpace(space: Space): DetectedChange? {
+        val path = space.spacePathOf(filePath)
+        val old = oldPath?.let { space.spacePathOf(it) }
+        return when {
+            path != null && (oldPath == null || old != null) -> copy(filePath = path, oldPath = old)
+            path != null -> copy(filePath = path, oldPath = null, changeType = ChangeType.ADDED)
+            old != null -> copy(filePath = old, oldPath = null, changeType = ChangeType.DELETED)
+            else -> null
         }
     }
 

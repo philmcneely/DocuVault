@@ -89,7 +89,7 @@ class SyncSchedulerPruneTest {
 
     /** Points the mocked GitService at a real directory so path checks hit disk. */
     private fun useRepo(repoPath: Path) {
-        `when`(gitService.getRepoPath(space.id!!)).thenReturn(repoPath)
+        `when`(gitService.getContentRoot(space)).thenReturn(repoPath)
         `when`(gitService.regularFileExists(anyArg(), anyString())).thenAnswer { invocation ->
             Files.isRegularFile(repoPath.resolve(invocation.getArgument<String>(1)))
         }

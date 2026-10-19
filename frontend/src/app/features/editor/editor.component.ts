@@ -3023,8 +3023,10 @@ export class EditorComponent implements OnInit, OnDestroy, HasUnsavedChanges {
   getGitUrl(): string | null {
     const s = this.space();
     if (!s?.gitlabUrl || !this.documentPath) return null;
-    const base = s.gitlabUrl.replace(/\/+$/, '');
-    return `${base}/-/blob/${s.branch}/${this.documentPath}`;
+    // gitlabUrl is the clone URL; GitLab resolves "project.git" but not "project.git/-/blob/…".
+    const base = s.gitlabUrl.replace(/\/+$/, '').replace(/\.git$/, '');
+    const path = s.gitSubfolder ? `${s.gitSubfolder}/${this.documentPath}` : this.documentPath;
+    return `${base}/-/blob/${s.branch}/${path}`;
   }
 
   copyGitLink(): void {
