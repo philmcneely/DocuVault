@@ -77,7 +77,7 @@ import { BrandLogoComponent } from '../../shared/components/brand-logo.component
                   [(ngModel)]="password"
                   name="password"
                   class="input"
-                  placeholder="At least 8 characters"
+                  placeholder="8+ characters: Aa, 0-9 and a symbol"
                   autocomplete="new-password"
                   enterkeyhint="next"
                   required

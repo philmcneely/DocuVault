@@ -97,7 +97,7 @@ export class AuthService {
   register(data: RegisterRequest): Observable<AuthResponse> {
     return this.http.post<AuthResponse>('/api/auth/register', data, { withCredentials: true }).pipe(
       tap(response => this.handleAuthResponse(response)),
-      catchError(error => of({ error: error.error?.error || 'Registration failed' }))
+      catchError(error => of({ error: this.failureMessage(error, 'Registration failed') }))
     );
   }
 
@@ -110,7 +110,7 @@ export class AuthService {
   setupAdmin(data: RegisterRequest): Observable<AuthResponse> {
     return this.http.post<AuthResponse>('/api/auth/setup-admin', data, { withCredentials: true }).pipe(
       tap(response => this.handleAuthResponse(response)),
-      catchError(error => of({ error: error.error?.error || 'Setup failed' }))
+      catchError(error => of({ error: this.failureMessage(error, 'Setup failed') }))
     );
   }
 
@@ -122,20 +122,22 @@ export class AuthService {
 
   resetPassword(token: string, password: string): Observable<{ message?: string; error?: string }> {
     return this.http.post<{ message?: string; error?: string }>('/api/auth/reset-password', { token, password }).pipe(
-      // The backend reports failures two ways: the controller returns
-      // { error } for token problems, while bean-validation failures come
-      // back from the global handler as { message, errors }. Surface
-      // whichever is present instead of collapsing them all to a generic
-      // "Something went wrong".
-      catchError(error => of({
-        error: error.error?.error
-          || (Array.isArray(error.error?.errors) && error.error.errors.length
-            ? error.error.errors.join(', ')
-            : null)
-          || error.error?.message
-          || 'Something went wrong. Please try again.'
-      }))
+      catchError(error => of({ error: this.failureMessage(error, 'Something went wrong. Please try again.') }))
     );
+  }
+
+  /**
+   * The backend reports failures two ways: a controller returns { error },
+   * while bean-validation failures (a password that misses a rule) come back
+   * from the global handler as { message, errors }. Surface whichever is
+   * present instead of collapsing them all to a generic fallback.
+   */
+  private failureMessage(error: any, fallback: string): string {
+    const body = error?.error;
+    return body?.error
+      || (Array.isArray(body?.errors) && body.errors.length ? body.errors.join(', ') : null)
+      || body?.message
+      || fallback;
   }
 
   logout(): void {
